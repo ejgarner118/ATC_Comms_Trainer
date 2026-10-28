@@ -1,16 +1,6 @@
 import { bindPtt } from "./audio/ptt";
 import { armRadio, playRadio, playSquelch, stopRadio } from "./audio/radio";
-import {
-  armMicrophone,
-  beginClip,
-  endClip,
-  MicrophoneBlocked,
-  lastClipWasLive,
-  microphoneReady,
-  preloadRecognizer,
-  transcribeHeard,
-  type RecognizerStatus,
-} from "./audio/stt";
+import { MicrophoneBlocked, prepareEar, startListening, stopListening } from "./audio/stt";
 import { loadDiagram, paintDiagram } from "./map/diagram";
 import { APPROACH, drawSchematic, PARKED, type MapPose } from "./map/schematic";
 import { emptyLesson, lessonRows, recordMark, type LessonCard } from "./scenario/lesson";
@@ -79,19 +69,13 @@ let motionToken = 0;
 let speakToken = 0;
 let pose: MapPose = PARKED;
 let lesson: LessonCard = emptyLesson();
-let recognizerStatus: RecognizerStatus = "loading";
 let capturing = false;
 let diagramOn = false;
 const SCHEMATIC_NOTE = "Training aid based on a simplified Salem diagram. Not for navigation.";
 const DIAGRAM_NOTE = "FAA airport diagram, cycle 2610. Not for navigation.";
 
-micNote.textContent = "Loading the recognizer…";
-preloadRecognizer((next) => {
-  recognizerStatus = next;
-  if (micNote.textContent === "Loading the recognizer…" || micNote.textContent === "Hearing the call…") {
-    micNote.textContent = micPrompt();
-  }
-});
+micNote.textContent = "Hold Spacebar or the button to talk.";
+prepareEar();
 
 const ptt = bindPtt(
   pttButton,
@@ -101,19 +85,11 @@ const ptt = bindPtt(
       return;
     }
     armRadio();
-    armMicrophone();
-    beginClip();
+    startListening();
     playSquelch();
     setTx(true);
     capturing = true;
     micNote.textContent = "Transmitting.";
-    void microphoneReady().catch((error: unknown) => {
-      setTx(false);
-      micNote.textContent =
-        error instanceof MicrophoneBlocked
-          ? "Microphone permission was blocked. Type the call instead."
-          : "Press and hold again. The microphone is ready now.";
-    });
     window.clearTimeout(stuckTimer);
     stuckTimer = window.setTimeout(() => {
       hud.textContent = "Stuck mike. Release the push-to-talk.";
@@ -121,7 +97,7 @@ const ptt = bindPtt(
   },
   () => {
     window.clearTimeout(stuckTimer);
-    const heard = capturing ? endClip() : null;
+    const heard = capturing ? stopListening() : null;
     playSquelch();
     setTx(false);
     if (!heard) return;
@@ -327,7 +303,7 @@ function beginLesson(mode: LessonMode): void {
   hud.textContent = arriving
     ? "Call Salem Tower on 119.1. Say who you are calling, who you are, where you are, and that you are landing."
     : "Call Salem Ground on 121.9. Say who you are calling, who you are, where you are, and what you want.";
-  micNote.textContent = micPrompt();
+  micNote.textContent = "Hold Spacebar or the button to talk.";
   renderRadio();
   renderPhase();
   paintMap();
@@ -410,35 +386,20 @@ function silenceRadio(): void {
   sendButton.disabled = false;
 }
 
-function micPrompt(): string {
-  if (recognizerStatus === "failed") return "The recognizer did not load. Type the call and transmit.";
-  if (recognizerStatus === "loading") return "Loading the recognizer…";
-  return "Hold Spacebar or the button to talk.";
-}
-
-async function hearClip(heard: Promise<Float32Array>): Promise<void> {
+async function hearClip(heard: Promise<string>): Promise<void> {
   try {
-    const audio = await heard;
-    if (audio.length === 0) {
-      micNote.textContent = lastClipWasLive()
-        ? "The microphone did not catch that. Type the call instead."
-        : "Press and hold again. The microphone is ready now.";
-      return;
-    }
-    const text = (await transcribeHeard(audio)).trim();
+    const text = (await heard).trim();
     if (!text) {
       micNote.textContent = "The microphone did not catch that. Type the call instead.";
       return;
     }
     submit(text);
-    if (!radioBusy) micNote.textContent = micPrompt();
+    if (!radioBusy) micNote.textContent = "Hold Spacebar or the button to talk.";
   } catch (error) {
-    if (error instanceof MicrophoneBlocked) {
-      micNote.textContent = "Microphone permission was blocked. Type the call instead.";
-      return;
-    }
-    recognizerStatus = "failed";
-    micNote.textContent = "The recognizer did not load. Type the call and transmit.";
+    micNote.textContent =
+      error instanceof MicrophoneBlocked
+        ? "Microphone permission was blocked. Type the call instead."
+        : "The microphone did not catch that. Type the call instead.";
   }
 }
 

@@ -10,7 +10,7 @@ The Line up and wait checkbox is on the departure lesson only. It is off unless 
 
 The lesson card lists how each required call went, and it appears when the hop is done. Reset flies the selected lesson again.
 
-The typed box works in any browser. Chrome or Edge can use the microphone. On the published site, the microphone uses the in-browser recognizer and the controller uses the browser voice. Locally, `npm run speak` uses the radio voice and the faster recognizer.
+The typed box works in any browser. Chrome or Edge can use the microphone. On the published site, the microphone uses the browser’s speech recognition and the controller uses the browser voice. Locally, `npm run speak` uses the radio voice and the faster recognizer.
 
 ## Published site
 

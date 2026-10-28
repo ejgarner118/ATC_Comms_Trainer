@@ -1,5 +1,3 @@
-export type RecognizerStatus = "loading" | "ready" | "failed";
-
 export const PRE_ROLL_MS = 350;
 export const PRESS_BURST_MS = 80;
 export const MIN_SPEECH_MS = 400;
@@ -13,69 +11,237 @@ export class MicrophoneBlocked extends Error {
   }
 }
 
-interface WorkerReply {
-  id: number;
-  text?: string;
-  error?: string;
+type Ear = "server" | "browser";
+
+interface RecognitionResult {
+  readonly isFinal: boolean;
+  readonly 0: { readonly transcript: string };
 }
 
-interface Pending {
+interface RecognitionEvent extends Event {
+  readonly results: ArrayLike<RecognitionResult>;
+}
+
+interface RecognitionErrorEvent extends Event {
+  readonly error: string;
+}
+
+interface BrowserRecognition extends EventTarget {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onaudiostart: ((event: Event) => void) | null;
+  onresult: ((event: RecognitionEvent) => void) | null;
+  onerror: ((event: RecognitionErrorEvent) => void) | null;
+  onend: ((event: Event) => void) | null;
+}
+
+interface RecognitionConstructor {
+  new (): BrowserRecognition;
+}
+
+interface HearResult {
   resolve: (text: string) => void;
   reject: (error: Error) => void;
 }
 
-let status: RecognizerStatus = "loading";
-let worker: Worker | null = null;
-let onStatus: ((status: RecognizerStatus) => void) | null = null;
-const waiters = new Map<number, Pending>();
-let nextId = 1;
+let ear: Ear = "browser";
+let activeEar: Ear = "browser";
+let holding = false;
+let recognition: BrowserRecognition | null = null;
+let heardText = "";
+let hearResult: HearResult | null = null;
+let hearSettled = false;
+let pending: Promise<string> = Promise.resolve("");
+let streamPromise: Promise<MediaStream> | null = null;
+let starting: Promise<void> | null = null;
+let releaseRecording: (() => void) | null = null;
+let recorder: MediaRecorder | null = null;
+let blobs: Blob[] = [];
 
-function workerFor(): Worker {
-  if (worker) return worker;
-  worker = new Worker(new URL("./whisper.worker.ts", import.meta.url), { type: "module" });
-  worker.onmessage = (event: MessageEvent<WorkerReply>) => {
-    const pending = waiters.get(event.data.id);
-    if (!pending) return;
-    waiters.delete(event.data.id);
-    if (event.data.error) {
-      status = "failed";
-      onStatus?.("failed");
-      pending.reject(new Error(event.data.error));
-      return;
-    }
-    status = "ready";
-    onStatus?.("ready");
-    pending.resolve(event.data.text ?? "");
+function recognitionConstructor(): RecognitionConstructor | null {
+  const host = window as Window & {
+    SpeechRecognition?: RecognitionConstructor;
+    webkitSpeechRecognition?: RecognitionConstructor;
   };
-  worker.onerror = () => {
-    status = "failed";
-    onStatus?.("failed");
-    for (const pending of waiters.values()) pending.reject(new Error("recognizer failed"));
-    waiters.clear();
-  };
-  return worker;
+  return host.SpeechRecognition ?? host.webkitSpeechRecognition ?? null;
 }
 
-/** Start loading the local recognizer. The typed box stays available either way. */
-export function preloadRecognizer(listener: (status: RecognizerStatus) => void): void {
-  onStatus = listener;
-  listener(status);
-  const id = nextId++;
-  waiters.set(id, {
-    resolve: () => undefined,
-    reject: () => undefined,
+/** One check. A 404 means the published site, so Chrome hears the transmission. */
+export function prepareEar(): void {
+  void fetch("/api/hear", {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: new ArrayBuffer(0),
+  })
+    .then((response) => {
+      if (response.status !== 404) ear = "server";
+    })
+    .catch(() => undefined);
+}
+
+/** Begin hearing inside the push-to-talk gesture. */
+export function startListening(): void {
+  holding = true;
+  activeEar = ear;
+  if (activeEar === "server") {
+    pending = new Promise<string>((resolve, reject) => {
+      releaseRecording = () => {
+        void finishRecording().then(resolve, reject);
+      };
+    });
+    starting = beginRecording();
+    return;
+  }
+  pending = beginRecognition();
+}
+
+/** End the hold and return the words that were heard. */
+export function stopListening(): Promise<string> {
+  holding = false;
+  if (activeEar === "server") {
+    releaseRecording?.();
+    releaseRecording = null;
+    return pending;
+  }
+  try {
+    recognition?.stop();
+  } catch {
+    finishRecognition(heardText);
+  }
+  return pending;
+}
+
+function beginRecognition(): Promise<string> {
+  const Ctor = recognitionConstructor();
+  heardText = "";
+  hearSettled = false;
+  const result = new Promise<string>((resolve, reject) => {
+    hearResult = { resolve, reject };
   });
-  workerFor().postMessage({ id, warmup: true });
+  if (!Ctor) {
+    finishRecognition("");
+    return result;
+  }
+  const rec = new Ctor();
+  recognition = rec;
+  rec.lang = "en-US";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onaudiostart = () => {
+    document.documentElement.dataset.micHearing = "live";
+  };
+  rec.onresult = (event) => {
+    let text = "";
+    for (let i = 0; i < event.results.length; i += 1) {
+      text += `${event.results[i]?.[0]?.transcript ?? ""} `;
+    }
+    heardText = text.replace(/\s+/g, " ").trim();
+  };
+  rec.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      failRecognition(new MicrophoneBlocked());
+    }
+  };
+  rec.onend = () => finishRecognition(heardText);
+  try {
+    rec.start();
+  } catch (error) {
+    failRecognition(error instanceof MicrophoneBlocked ? error : new Error("speech recognition failed"));
+  }
+  return result;
 }
 
-/** Prefer the speech server. A 503 or a network miss falls back to the browser model. */
-export async function transcribeHeard(audio: Float32Array): Promise<string> {
-  const server = await transcribeOnServer(audio);
-  if (server !== null) return server;
-  return transcribeClip(audio);
+function finishRecognition(text: string): void {
+  if (hearSettled) return;
+  hearSettled = true;
+  hearResult?.resolve(text);
+  recognition = null;
+}
+
+function failRecognition(error: Error): void {
+  if (hearSettled) return;
+  hearSettled = true;
+  hearResult?.reject(error);
+  recognition = null;
+}
+
+function micStream(): Promise<MediaStream> {
+  if (!streamPromise) {
+    streamPromise = navigator.mediaDevices
+      .getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+        },
+      })
+      .catch((error: unknown) => {
+        streamPromise = null;
+        throw error instanceof MicrophoneBlocked ? error : new MicrophoneBlocked();
+      });
+  }
+  return streamPromise;
+}
+
+async function beginRecording(): Promise<void> {
+  const live = await micStream();
+  if (!holding || recorder) return;
+  blobs = [];
+  const rec = new MediaRecorder(live);
+  recorder = rec;
+  rec.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) blobs.push(event.data);
+  });
+  if (holding) rec.start();
+}
+
+async function finishRecording(): Promise<string> {
+  try {
+    if (starting) await starting;
+  } catch (error) {
+    throw error instanceof MicrophoneBlocked ? error : new MicrophoneBlocked();
+  }
+  const rec = recorder;
+  recorder = null;
+  if (!rec) return "";
+  const blob = await stoppedBlob(rec);
+  const audio = await clipFromBlob(blob);
+  return (await transcribeOnServer(audio)) ?? "";
+}
+
+function stoppedBlob(rec: MediaRecorder): Promise<Blob> {
+  if (rec.state === "inactive") {
+    return Promise.resolve(new Blob(blobs, { type: rec.mimeType || "audio/webm" }));
+  }
+  return new Promise((resolve) => {
+    rec.addEventListener(
+      "stop",
+      () => resolve(new Blob(blobs, { type: rec.mimeType || "audio/webm" })),
+      { once: true },
+    );
+    if (rec.state !== "inactive") rec.stop();
+  });
+}
+
+async function clipFromBlob(blob: Blob): Promise<Float32Array> {
+  if (blob.size === 0) return new Float32Array();
+  const ctx = new AudioContext();
+  try {
+    const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const pcm = downsample(decoded.getChannelData(0), decoded.sampleRate, TARGET_RATE);
+    return speechClip(pcm, TARGET_RATE, 0);
+  } catch {
+    return new Float32Array();
+  } finally {
+    await ctx.close();
+  }
 }
 
 async function transcribeOnServer(audio: Float32Array): Promise<string | null> {
+  if (audio.length === 0) return "";
   const body = new ArrayBuffer(audio.byteLength);
   new Float32Array(body).set(audio);
   try {
@@ -91,141 +257,6 @@ async function transcribeOnServer(audio: Float32Array): Promise<string | null> {
     return typeof text === "string" ? text : null;
   } catch {
     return null;
-  }
-}
-
-export function transcribeClip(audio: Float32Array): Promise<string> {
-  if (status === "failed") return Promise.reject(new Error("recognizer failed"));
-  const id = nextId++;
-  const buffer = audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength);
-  return new Promise((resolve, reject) => {
-    waiters.set(id, { resolve, reject });
-    workerFor().postMessage({ id, audio: new Float32Array(buffer) }, [buffer]);
-  });
-}
-
-import workletUrl from "./mic-worklet.js?url";
-
-let context: AudioContext | null = null;
-let stream: MediaStream | null = null;
-let opening: Promise<void> | null = null;
-let workletReady = false;
-let ring: Float32Array[] = [];
-let ringSamples = 0;
-let recording: Float32Array[] | null = null;
-let preRollSamples = 0;
-let lastClipLive = false;
-
-/** Open the microphone on the push-to-talk gesture and leave it open. */
-export function armMicrophone(): void {
-  if (!context) {
-    const ctx = new AudioContext();
-    context = ctx;
-    opening = openStream(ctx);
-    void opening.catch(() => undefined);
-  }
-  void context.resume();
-}
-
-/** The worklet delivered buffers for the last clip. Silence does not count. */
-export function lastClipWasLive(): boolean {
-  return lastClipLive;
-}
-
-export function microphoneReady(): Promise<void> {
-  if (!opening) return Promise.reject(new MicrophoneBlocked());
-  return opening;
-}
-
-/** Copy the pre-roll and record what follows. */
-export function beginClip(): void {
-  recording = ring.map((chunk) => new Float32Array(chunk));
-  preRollSamples = ringSamples;
-  ring = [];
-  ringSamples = 0;
-}
-
-/** Stop the clip. The stream stays open for the next press. */
-export function endClip(): Promise<Float32Array> {
-  if (!workletReady) {
-    recording = null;
-    preRollSamples = 0;
-    lastClipLive = false;
-    if (!opening) return Promise.resolve(new Float32Array());
-    return opening.then(
-      () => new Float32Array(),
-      (error: unknown) => {
-        throw error;
-      },
-    );
-  }
-  return Promise.resolve(takeClip());
-}
-
-function takeClip(): Float32Array {
-  const chunks = recording ?? [];
-  const preRoll = preRollSamples;
-  recording = null;
-  preRollSamples = 0;
-  const rate = context?.sampleRate || TARGET_RATE;
-  const pcm = downsample(concat(chunks), rate, TARGET_RATE);
-  lastClipLive = chunks.length > 0;
-  const preRollAtTarget = Math.round((preRoll * TARGET_RATE) / rate);
-  return speechClip(pcm, TARGET_RATE, preRollAtTarget);
-}
-
-async function openStream(ctx: AudioContext): Promise<void> {
-  void ctx.resume();
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: true,
-      },
-    });
-  } catch {
-    throw new MicrophoneBlocked();
-  }
-  await ctx.resume();
-  await ctx.audioWorklet.addModule(workletUrl);
-  const source = ctx.createMediaStreamSource(stream);
-  const capture = new AudioWorkletNode(ctx, "mic-capture");
-  capture.channelCount = 1;
-  capture.channelCountMode = "explicit";
-  capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
-    remember(event.data);
-  };
-  const mute = ctx.createGain();
-  mute.gain.value = 0;
-  source.connect(capture);
-  capture.connect(mute);
-  mute.connect(ctx.destination);
-  workletReady = true;
-}
-
-function remember(chunk: Float32Array): void {
-  if (recording) {
-    recording.push(chunk);
-    return;
-  }
-  ring.push(chunk);
-  ringSamples += chunk.length;
-  const max = Math.floor(((context?.sampleRate || TARGET_RATE) * PRE_ROLL_MS) / 1000);
-  while (ringSamples > max && ring.length > 0) {
-    const next = ring[0];
-    if (ring.length === 1 || ringSamples - next.length < max) {
-      const keep = max;
-      const overflow = ringSamples - keep;
-      if (overflow > 0) {
-        ring[0] = next.subarray(overflow);
-        ringSamples = keep;
-      }
-      break;
-    }
-    ring.shift();
-    ringSamples -= next.length;
   }
 }
 
@@ -274,7 +305,7 @@ export function trimSilence(samples: Float32Array, sampleRate: number): Float32A
   return samples.subarray(start, end);
 }
 
-/** A clip Whisper should hear. Quiet or very short audio comes back empty. */
+/** A clip the local recognizer should hear. Quiet or very short audio comes back empty. */
 export function speechClip(samples: Float32Array, sampleRate: number, preRollSamples: number): Float32Array {
   const trimmed = trimSilence(dropPressBurst(samples, sampleRate, preRollSamples), sampleRate);
   const min = Math.floor((sampleRate * MIN_SPEECH_MS) / 1000);
@@ -290,17 +321,6 @@ function frameRms(samples: Float32Array, from: number, to: number): number {
 
 function rms(samples: Float32Array): number {
   return frameRms(samples, 0, samples.length);
-}
-
-function concat(chunks: Float32Array[]): Float32Array {
-  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
-  const out = new Float32Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return out;
 }
 
 function downsample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
