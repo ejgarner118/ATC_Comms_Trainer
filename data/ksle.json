@@ -1,0 +1,126 @@
+{
+  "airport": {
+    "id": "KSLE",
+    "name": "McNary Field",
+    "city": "Salem, Oregon",
+    "airspace": "Class D while the tower is open",
+    "towerHours": "1500-0500Z",
+    "elevationFt": 213,
+    "diagram": "AL-361",
+    "chartCycle": "2610",
+    "chartEffective": "2026-10-01",
+    "chartSuperseded": "2026-10-29",
+    "sources": {
+      "airportDiagram": "https://aeronav.faa.gov/d-tpp/2610/00361ad.pdf",
+      "chartSupplement": "FAA Chart Supplement, Pacific Northwest, KSLE, cycle effective 2026-10-01"
+    }
+  },
+  "runways": [
+    { "id": "13/31", "lengthFt": 5811, "widthFt": 150 },
+    { "id": "16/34", "lengthFt": 5146, "widthFt": 100 }
+  ],
+  "frequencies": [
+    { "mhz": "124.55", "service": "ATIS", "callSign": "Salem ATIS" },
+    { "mhz": "121.9", "service": "Ground", "callSign": "Salem Ground" },
+    { "mhz": "119.1", "service": "Tower", "callSign": "Salem Tower" },
+    { "mhz": "125.8", "service": "Approach", "callSign": "Seattle Approach" }
+  ],
+  "aircraft": {
+    "type": "Cessna 172",
+    "modelCall": "Skyhawk",
+    "alsoAccepted": "Cessna",
+    "callSign": "Skyhawk 3694S",
+    "registration": "N3694S"
+  },
+  "atis": {
+    "code": "Bravo",
+    "wind": "310 at 8",
+    "visibilitySm": 10,
+    "sky": "clear",
+    "temperatureC": 18,
+    "dewpointC": 8,
+    "altimeter": "30.02",
+    "runwayInUse": "31",
+    "time": "1830Z"
+  },
+  "route": {
+    "position": "GA apron",
+    "intent": "VFR to the northwest",
+    "taxiway": "Charlie, cross Runway 34, Foxtrot",
+    "holdShort": "Runway 31",
+    "crossesRunway": true,
+    "note": "Training path from the GA apron: taxiway C, cross runway 34, taxiway F, hold short of runway 31. Not for navigation."
+  },
+  "transmissions": {
+    "clearance": {
+      "speaker": "Salem Ground",
+      "display": "Skyhawk 3694S, Salem Ground, Runway 31, taxi via Charlie, cross Runway 34, via Foxtrot, hold short of Runway 31.",
+      "spoken": "Skyhawk three six niner four sierra, Salem Ground, Runway three one, taxi via Charlie, cross Runway three four, via Foxtrot, hold short of Runway three one."
+    },
+    "say-again-call-sign": {
+      "speaker": "Salem Ground",
+      "display": "Aircraft calling Salem Ground, say again call sign.",
+      "spoken": "Aircraft calling Salem Ground, say again call sign."
+    },
+    "say-again-request": {
+      "speaker": "Salem Ground",
+      "display": "Skyhawk 3694S, Salem Ground, say again request.",
+      "spoken": "Skyhawk three six niner four sierra, Salem Ground, say again request."
+    },
+    "read-back-hold": {
+      "speaker": "Salem Ground",
+      "display": "Skyhawk 3694S, read back hold instructions.",
+      "spoken": "Skyhawk three six niner four sierra, read back hold instructions."
+    },
+    "read-back-crossing": {
+      "speaker": "Salem Ground",
+      "display": "Skyhawk 3694S, read back the crossing.",
+      "spoken": "Skyhawk three six niner four sierra, read back the crossing."
+    },
+    "contact-tower": {
+      "speaker": "Salem Ground",
+      "display": "Skyhawk 3694S, Salem Ground, contact Tower 119.1.",
+      "spoken": "Skyhawk three six niner four sierra, Salem Ground, contact Tower one one niner point one."
+    },
+    "takeoff-clearance": {
+      "speaker": "Salem Tower",
+      "display": "Skyhawk 3694S, Runway 31, cleared for takeoff.",
+      "spoken": "Skyhawk three six niner four sierra, Runway three one, cleared for takeoff."
+    },
+    "line-up-and-wait": {
+      "speaker": "Salem Tower",
+      "display": "Skyhawk 3694S, Runway 31, line up and wait.",
+      "spoken": "Skyhawk three six niner four sierra, Runway three one, line up and wait."
+    },
+    "atis": {
+      "speaker": "Salem ATIS",
+      "display": "Salem airport information Bravo. 1830Z. Wind 310 at 8. Visibility 10. Sky clear. Temperature 18. Dew point 8. Altimeter 30.02. Runway 31 in use. Advise on initial contact you have information Bravo.",
+      "spoken": "Salem airport information Bravo. One eight three zero zulu. Wind three one zero at eight. Visibility one zero. Sky clear. Temperature one eight. Dew point eight. Altimeter three zero zero two. Runway three one in use. Advise on initial contact you have information Bravo."
+    },
+    "landing-clearance": {
+      "speaker": "Salem Tower",
+      "display": "Skyhawk 3694S, Runway 31, cleared to land.",
+      "spoken": "Skyhawk three six niner four sierra, Runway three one, cleared to land."
+    },
+    "contact-ground": {
+      "speaker": "Salem Tower",
+      "display": "Skyhawk 3694S, exit at Foxtrot, contact Ground 121.9.",
+      "spoken": "Skyhawk three six niner four sierra, exit at Foxtrot, contact Ground one two one point niner."
+    },
+    "taxi-in": {
+      "speaker": "Salem Ground",
+      "display": "Skyhawk 3694S, Salem Ground, taxi to the GA apron via Foxtrot, cross Runway 34, via Charlie.",
+      "spoken": "Skyhawk three six niner four sierra, Salem Ground, taxi to the GA apron via Foxtrot, cross Runway three four, via Charlie."
+    },
+    "say-again": {
+      "speaker": "Salem Tower",
+      "display": "Skyhawk 3694S, say again.",
+      "spoken": "Skyhawk three six niner four sierra, say again."
+    },
+    "frequency-change": {
+      "speaker": "Salem Tower",
+      "display": "Skyhawk 3694S, frequency change approved.",
+      "spoken": "Skyhawk three six niner four sierra, frequency change approved."
+    }
+  }
+}

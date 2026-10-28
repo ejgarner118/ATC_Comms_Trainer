@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ATC Comms Trainer — KSLE</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div class="chassis">
+      <header class="bank-head">
+        <div>
+          <p class="eyebrow">Class D radio trainer</p>
+          <h1>KSLE McNary Field</h1>
+          <p id="disclaimer" class="disclaimer">Training aid based on a simplified Salem diagram. Not for navigation.</p>
+        </div>
+        <div class="phase-block">
+          <span class="phase-kicker">Phase</span>
+          <strong id="phase-label">At the GA apron</strong>
+          <button id="reset" type="button">Reset</button>
+        </div>
+      </header>
+
+      <div class="deck">
+        <section class="map-well" aria-label="Airport diagram">
+          <div class="map-switch">
+            <button id="show-schematic" type="button" aria-pressed="true">Schematic</button>
+            <button id="show-diagram" type="button" aria-pressed="false">Diagram</button>
+          </div>
+          <canvas id="airport"></canvas>
+          <canvas id="faa-diagram" hidden></canvas>
+        </section>
+
+        <aside class="stack">
+          <section class="briefing" aria-label="Flight briefing">
+            <h2>Briefing</h2>
+            <p id="briefing"></p>
+            <div class="lesson-switch">
+              <button id="show-depart" type="button" aria-pressed="true">Depart</button>
+              <button id="show-arrive" type="button" aria-pressed="false">Arrive</button>
+            </div>
+            <label class="flag" id="luaw-flag" for="luaw">
+              <input id="luaw" type="checkbox" />
+              Line up and wait
+            </label>
+            <p class="hint">Who you are calling, who you are, where you are, and what you want.</p>
+          </section>
+
+          <section class="radio" aria-label="Comm radio">
+            <div class="freq-row">
+              <div class="freq freq-active">
+                <span class="freq-kicker">Active</span>
+                <strong id="active-freq">121.9</strong>
+                <span id="active-name">Salem Ground</span>
+              </div>
+              <button id="swap" type="button">Swap</button>
+              <div class="freq freq-standby">
+                <span class="freq-kicker">Standby</span>
+                <strong id="standby-freq">119.1</strong>
+                <span id="standby-name">Salem Tower</span>
+                <button id="step" type="button">Step</button>
+              </div>
+            </div>
+            <div class="annunciators">
+              <span id="tx-light" class="jewel jewel-tx">TX</span>
+              <span id="rx-light" class="jewel jewel-rx">RX</span>
+              <span id="stby-light" class="jewel jewel-stby is-on">STBY</span>
+            </div>
+            <button id="ptt" type="button" aria-pressed="false">Hold to talk</button>
+            <p id="mic-note">Hold Spacebar or the button to talk.</p>
+          </section>
+
+          <form id="composer">
+            <label for="transmission">Typed transmission</label>
+            <textarea id="transmission" rows="2" placeholder="Type the call if the microphone misses a word."></textarea>
+            <button id="send" type="submit">Transmit</button>
+          </form>
+        </aside>
+      </div>
+
+      <section class="feedback" aria-label="Transcript and feedback">
+        <div>
+          <h2>Readback</h2>
+          <ol id="lesson" hidden></ol>
+          <ul id="chips"></ul>
+          <p id="hud">Call Salem Ground on 121.9. Say who you are calling, who you are, where you are, and what you want.</p>
+        </div>
+        <div>
+          <h2>Transcript</h2>
+          <ol id="transcript"></ol>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
