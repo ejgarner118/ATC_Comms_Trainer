@@ -5,7 +5,7 @@ import {
   beginClip,
   endClip,
   MicrophoneBlocked,
-  lastClipHadSamples,
+  lastClipWasLive,
   microphoneReady,
   preloadRecognizer,
   transcribeHeard,
@@ -107,9 +107,12 @@ const ptt = bindPtt(
     setTx(true);
     capturing = true;
     micNote.textContent = "Transmitting.";
-    void microphoneReady().catch(() => {
+    void microphoneReady().catch((error: unknown) => {
       setTx(false);
-      micNote.textContent = "Microphone permission was blocked. Type the call instead.";
+      micNote.textContent =
+        error instanceof MicrophoneBlocked
+          ? "Microphone permission was blocked. Type the call instead."
+          : "Press and hold again. The microphone is ready now.";
     });
     window.clearTimeout(stuckTimer);
     stuckTimer = window.setTimeout(() => {
@@ -417,7 +420,7 @@ async function hearClip(heard: Promise<Float32Array>): Promise<void> {
   try {
     const audio = await heard;
     if (audio.length === 0) {
-      micNote.textContent = lastClipHadSamples()
+      micNote.textContent = lastClipWasLive()
         ? "The microphone did not catch that. Type the call instead."
         : "Press and hold again. The microphone is ready now.";
       return;

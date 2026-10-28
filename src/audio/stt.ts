@@ -104,14 +104,17 @@ export function transcribeClip(audio: Float32Array): Promise<string> {
   });
 }
 
+import workletUrl from "./mic-worklet.js?url";
+
 let context: AudioContext | null = null;
 let stream: MediaStream | null = null;
 let opening: Promise<void> | null = null;
+let workletReady = false;
 let ring: Float32Array[] = [];
 let ringSamples = 0;
 let recording: Float32Array[] | null = null;
 let preRollSamples = 0;
-let lastClipSamples = 0;
+let lastClipLive = false;
 
 /** Open the microphone on the push-to-talk gesture and leave it open. */
 export function armMicrophone(): void {
@@ -124,9 +127,9 @@ export function armMicrophone(): void {
   void context.resume();
 }
 
-/** The last clip contained microphone samples, before silence was trimmed. */
-export function lastClipHadSamples(): boolean {
-  return lastClipSamples > 0;
+/** The worklet delivered buffers for the last clip. Silence does not count. */
+export function lastClipWasLive(): boolean {
+  return lastClipLive;
 }
 
 export function microphoneReady(): Promise<void> {
@@ -144,13 +147,15 @@ export function beginClip(): void {
 
 /** Stop the clip. The stream stays open for the next press. */
 export function endClip(): Promise<Float32Array> {
-  if (opening && !stream) {
+  if (!workletReady) {
+    recording = null;
+    preRollSamples = 0;
+    lastClipLive = false;
+    if (!opening) return Promise.resolve(new Float32Array());
     return opening.then(
-      () => takeClip(),
-      () => {
-        recording = null;
-        preRollSamples = 0;
-        throw new MicrophoneBlocked();
+      () => new Float32Array(),
+      (error: unknown) => {
+        throw error;
       },
     );
   }
@@ -162,9 +167,9 @@ function takeClip(): Float32Array {
   const preRoll = preRollSamples;
   recording = null;
   preRollSamples = 0;
-  lastClipSamples = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const rate = context?.sampleRate || TARGET_RATE;
   const pcm = downsample(concat(chunks), rate, TARGET_RATE);
+  lastClipLive = chunks.length > 0;
   const preRollAtTarget = Math.round((preRoll * TARGET_RATE) / rate);
   return speechClip(pcm, TARGET_RATE, preRollAtTarget);
 }
@@ -175,7 +180,7 @@ async function openStream(ctx: AudioContext): Promise<void> {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
-        echoCancellation: true,
+        echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: true,
       },
@@ -184,16 +189,20 @@ async function openStream(ctx: AudioContext): Promise<void> {
     throw new MicrophoneBlocked();
   }
   await ctx.resume();
+  await ctx.audioWorklet.addModule(workletUrl);
   const source = ctx.createMediaStreamSource(stream);
-  const processor = ctx.createScriptProcessor(4096, 1, 1);
+  const capture = new AudioWorkletNode(ctx, "mic-capture");
+  capture.channelCount = 1;
+  capture.channelCountMode = "explicit";
+  capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
+    remember(event.data);
+  };
   const mute = ctx.createGain();
   mute.gain.value = 0;
-  processor.onaudioprocess = (event) => {
-    remember(new Float32Array(event.inputBuffer.getChannelData(0)));
-  };
-  source.connect(processor);
-  processor.connect(mute);
+  source.connect(capture);
+  capture.connect(mute);
   mute.connect(ctx.destination);
+  workletReady = true;
 }
 
 function remember(chunk: Float32Array): void {
