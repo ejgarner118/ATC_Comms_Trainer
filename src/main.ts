@@ -5,6 +5,7 @@ import {
   beginClip,
   endClip,
   MicrophoneBlocked,
+  lastClipHadSamples,
   microphoneReady,
   preloadRecognizer,
   transcribeHeard,
@@ -416,7 +417,9 @@ async function hearClip(heard: Promise<Float32Array>): Promise<void> {
   try {
     const audio = await heard;
     if (audio.length === 0) {
-      micNote.textContent = "The microphone did not catch that. Type the call instead.";
+      micNote.textContent = lastClipHadSamples()
+        ? "The microphone did not catch that. Type the call instead."
+        : "Press and hold again. The microphone is ready now.";
       return;
     }
     const text = (await transcribeHeard(audio)).trim();

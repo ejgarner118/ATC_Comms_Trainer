@@ -111,14 +111,22 @@ let ring: Float32Array[] = [];
 let ringSamples = 0;
 let recording: Float32Array[] | null = null;
 let preRollSamples = 0;
+let lastClipSamples = 0;
 
 /** Open the microphone on the push-to-talk gesture and leave it open. */
 export function armMicrophone(): void {
-  if (context) return;
-  const ctx = new AudioContext();
-  context = ctx;
-  opening = openStream(ctx);
-  void opening.catch(() => undefined);
+  if (!context) {
+    const ctx = new AudioContext();
+    context = ctx;
+    opening = openStream(ctx);
+    void opening.catch(() => undefined);
+  }
+  void context.resume();
+}
+
+/** The last clip contained microphone samples, before silence was trimmed. */
+export function lastClipHadSamples(): boolean {
+  return lastClipSamples > 0;
 }
 
 export function microphoneReady(): Promise<void> {
@@ -154,6 +162,7 @@ function takeClip(): Float32Array {
   const preRoll = preRollSamples;
   recording = null;
   preRollSamples = 0;
+  lastClipSamples = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const rate = context?.sampleRate || TARGET_RATE;
   const pcm = downsample(concat(chunks), rate, TARGET_RATE);
   const preRollAtTarget = Math.round((preRoll * TARGET_RATE) / rate);
@@ -174,6 +183,7 @@ async function openStream(ctx: AudioContext): Promise<void> {
   } catch {
     throw new MicrophoneBlocked();
   }
+  await ctx.resume();
   const source = ctx.createMediaStreamSource(stream);
   const processor = ctx.createScriptProcessor(4096, 1, 1);
   const mute = ctx.createGain();
